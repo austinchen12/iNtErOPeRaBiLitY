@@ -53,7 +53,6 @@ class Controller(Thread):
                             / Pwospf(type = TYPE_OSPF_HELLO, router_id = self.router_id, area_id = self.area_id, mask = intf.mask, helloint = self.helloint) 
                     )
             self.send(pkt)
-            # print('@@HELLO', self.sw.name, intf.ip)
 
         # to_be_deleted = []
         # for key, last_ping in self.neighbors.items():
@@ -93,7 +92,6 @@ class Controller(Thread):
             #     self._floodLSU()
     
     def _floodLSU(self):
-        return
         lsa_tuples = set()
         for router_id in self.lsdb:
             for ip, mask in self.lsdb[router_id]:
@@ -120,7 +118,7 @@ class Controller(Thread):
             pkt = (Ether(dst="ff:ff:ff:ff:ff:ff")
                     / CPUMetadata(origEtherType=TYPE_IPV4)
                     / IP(src=src_ip, dst=dst_ip, proto=TYPE_OSPF)
-                    / Pwospf(type=TYPE_OSPF_LSU,router_id = self.router_id, area_id = self.area_id, seq = self.sequence, ttl = TTL_DEFAULT,num_ads = len(lsa_list), advertisements = lsa_list)
+                    / Pwospf(type=TYPE_OSPF_LSU,router_id = self.router_id, area_id = self.area_id, seq = self.sequence, ttl = 30,num_ads = len(lsa_list), advertisements = lsa_list)
             )
             if dst_ip in self.ip_to_mac:
                 self.send(pkt)
@@ -260,7 +258,6 @@ class Controller(Thread):
 
 
                 router_id = pkt[Pwospf].router_id
-                print('@@HELLOCHECK', (router_id, src_ip) not in intf.neighbors, (router_id, src_ip), intf.neighbors)
                 if (router_id, src_ip) not in intf.neighbors:
                     self.lsdb[router_id] = set([(src_ip, intf.mask)])
                     
@@ -299,7 +296,6 @@ class Controller(Thread):
             print('@@UNKNOWN SUBNET', self.sw.name, pkt[IP].src)
             return
 
-        print('@@HANDLE_LSU', self.sw.name, pkt[IP].src, self.lsdb, [intf.neighbor for intf in self.ospf_interfaces.values()])
         for i in range(pkt[Pwospf].num_ads):
             rid = lsa.router_id
             lsa_list.append(lsa)
@@ -312,7 +308,7 @@ class Controller(Thread):
                 continue
 
             if rid not in self.lsdb:
-                print('@@ROUTER_ID MISMATCH A', self.sw.name, rid, self.lsdb, self.adj, [intf.neighbors for intf in self.ospf_interfaces.values()])
+                continue
                 # self.adj[router_id].add(rid)
                 # self.adj[rid].add(router_id)
                 self.lsdb[rid] = set()
@@ -364,7 +360,6 @@ class Controller(Thread):
             else:
                 print('@@preadj', self.sw.name, rid, next_hops, self.adj, adj)
                 print('@@waitwtf', self.sw.name, next_id, next_ip, (lsa.subnet, lsa.mask, lsa.router_id), [intf.neighbors for intf in self.ospf_interfaces.values()])
-        # print('@@LSU_HANDLE_END', self.sw.name, self.routing_table)
         # self.send(pkt)
         
     
