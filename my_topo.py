@@ -38,6 +38,6 @@ class TriangleSwitchTopo(Topo):
 
                 self.tuples[sw].append((apply_mask(ip, MASK_32), mac, i))
 
-        self.addLink(switches[0], switches[2], port1=4, port2=4)
-        self.addLink(switches[1], switches[0], port1=4, port2=5)
-        self.addLink(switches[1], switches[2], port1=5, port2=5)
+        self.addLink(switches[0], switches[1], port1=4, port2=5)
+        self.addLink(switches[1], switches[2], port1=4, port2=5)
+        self.addLink(switches[2], switches[0], port1=4, port2=5)
