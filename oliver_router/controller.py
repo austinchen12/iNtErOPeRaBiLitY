@@ -1,7 +1,3 @@
-#LInk Down, Link Up, updating ARP cache 
-#Diff Topology 
-#Default Gateway? 
-#Bookeeping functionality: Decrement TTL, IP checksum, Counters, ICMP echo + unreachable req, Local IP Router
 from threading import Thread, Event
 from collections import deque
 from scapy.all import sendp
@@ -130,7 +126,7 @@ class RouteTopology():
             lsu_ads = pkt[Pwospf].advertisements
             lsu_ad = pkt[Pwospf].advertisements[0]
             lsu_num = pkt[Pwospf].num_ads 
-            print(f"{self.sw} --> PRIOR: {self.lsa}") 
+            #print(f"{self.sw} --> PRIOR: {self.lsa}") 
             for i in range(0,lsu_num): 
                 lsu_rid = lsu_ad.router_id 
                 if lsu_rid not in self.lsa: 
@@ -161,10 +157,10 @@ class RouteTopology():
                     self.routes[key] = next_hop 
                 lsu_ad = lsu_ad.payload 
         #Debug Prints
-        if change: 
-            print(f"{self.sw}:ADJ {self.adj}\n") 
-            print(f"{self.sw}:LSA {self.lsa}\n") 
-            print(f"{self.sw}:ROUTES {self.routes}\n") 
+       # if change: 
+       #     print(f"{self.sw}:ADJ {self.adj}\n") 
+       #     print(f"{self.sw}:LSA {self.lsa}\n") 
+       #     print(f"{self.sw}:ROUTES {self.routes}\n") 
         return change 
 
         #print(f"{self.sw}: {self.lsa}") 
@@ -481,7 +477,7 @@ class P4Controller(Thread):
         for rid in self.routes.lsa: 
             for v in self.routes.lsa[rid]: 
                 lsu_ads.append((v,rid))
-        print(f"{self.sw}: LSU_AD_SEND --> {lsu_ads}") 
+        #print(f"{self.sw}: LSU_AD_SEND --> {lsu_ads}") 
         lsu_ads_pkt = [LinkStateAdvertisement(subnet = s, mask = m, router_id = r) for (s,m),r in lsu_ads] 
         for n in neighbor_routers: 
             src_ip = None
