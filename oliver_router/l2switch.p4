@@ -289,6 +289,10 @@ control MyIngress(inout headers hdr,
 
 
     apply {
+        if (hdr.pwospf_hello.isValid()) {
+            log_msg("@@HELLO {}, {}, {}", { hdr.ipv4.srcAddr, hdr.ipv4.dstAddr, standard_metadata.ingress_port });
+        }
+
         if (standard_metadata.ingress_port == CPU_PORT){
             cpu_meta_decap();
             bit<32> temp;  

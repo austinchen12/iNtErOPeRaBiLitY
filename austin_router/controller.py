@@ -34,8 +34,8 @@ class Controller(Thread):
         self.mac = self.macs[-1] # corresponding mac is also at the end
         self.router_id = router_id
         self.area_id = area_id
-        self.lsuint = 3
-        self.helloint = 1
+        self.lsuint = 7
+        self.helloint = 5
         
         self.ospf_thread = Thread(target=self.ospfLSALoop)
         self.sequence = 0
@@ -93,6 +93,7 @@ class Controller(Thread):
             #     self._floodLSU()
     
     def _floodLSU(self):
+        return
         lsa_tuples = set()
         for router_id in self.lsdb:
             for ip, mask in self.lsdb[router_id]:
@@ -245,7 +246,6 @@ class Controller(Thread):
         if pkt[Pwospf].area_id != self.area_id:
             return
 
-        # print('@@handle_hello', self.sw.name, src_ip)
         for intf in self.ospf_interfaces.values():
             if ip_address(src_ip) in ip_network(intf.subnet):
                 # TODO: intf == self.ospf_interfaces[pkt[CPUMetadata].srcPort]
@@ -260,6 +260,7 @@ class Controller(Thread):
 
 
                 router_id = pkt[Pwospf].router_id
+                print('@@HELLOCHECK', (router_id, src_ip) not in intf.neighbors, (router_id, src_ip), intf.neighbors)
                 if (router_id, src_ip) not in intf.neighbors:
                     self.lsdb[router_id] = set([(src_ip, intf.mask)])
                     
@@ -282,7 +283,6 @@ class Controller(Thread):
                 else:
                     intf.update(router_id, src_ip, datetime.now())
                 return
-        assert False # should never receive a hello packet from a non-neighbor
 
     def handleOSPFLSU(self, pkt):
         router_id = pkt[Pwospf].router_id
@@ -299,7 +299,7 @@ class Controller(Thread):
             print('@@UNKNOWN SUBNET', self.sw.name, pkt[IP].src)
             return
 
-        # print('@@HANDLE_LSU', self.sw.name, pkt[IP].src, self.lsdb)
+        print('@@HANDLE_LSU', self.sw.name, pkt[IP].src, self.lsdb, [intf.neighbor for intf in self.ospf_interfaces.values()])
         for i in range(pkt[Pwospf].num_ads):
             rid = lsa.router_id
             lsa_list.append(lsa)

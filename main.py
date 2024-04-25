@@ -58,7 +58,6 @@ def configure_oli(sw,host_ips,no):
         ret_cpu = OliverController(sw,cpu3_ips,cpu3_macs,cpu3_subnets,cpu3_intfs_mappings,cpu3_rid,1) 
     for h_ip in host_ips: 
         add_cpu_host(ret_cpu,h_ip,ret_cpu.sw) 
-    print(f"{ret_cpu.sw}: {ret_cpu.routes.routes} {ret_cpu.intfs_mappings}") 
     return ret_cpu 
 
 def initialize_topology():
@@ -111,7 +110,7 @@ def initialize_topology():
                 (4, 6): (r1_ips[1], r1_macs[1], r1_subnets[1], False)
             }
                         
-            cpu = AustinController(sw, r1_ips, r1_macs, r1_config, si, 1) # router_id si, area_id 1
+            cpu = AustinController(sw, r1_ips, r1_macs, r1_config, f"0.0.0.{si+1}", 1) # router_id si, area_id 1
 
         cpu.start()
 

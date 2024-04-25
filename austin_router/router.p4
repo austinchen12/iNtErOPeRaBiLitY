@@ -279,6 +279,10 @@ control MyIngress(inout headers hdr,
             }
         }
 
+        if (hdr.ospf_hello.isValid()) {
+            log_msg("@@HELLO {}, {}, {}", { hdr.ipv4.srcAddr, hdr.ipv4.dstAddr, standard_metadata.ingress_port });
+        }
+
         if (hdr.arp.isValid() && standard_metadata.ingress_port != CPU_PORT) {
             send_to_cpu();
         } else if (hdr.ospf_hello.isValid()) {

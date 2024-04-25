@@ -15,13 +15,10 @@ class SingleSwitchTopo(Topo):
             for i in range(1,n+1): 
                 host_num = 3*num + i  
                 host_ip = subnet + ".%d/24"%i
-                print("Host: " + str(host_ip)) 
-                print("Port: " + str(i)) 
                 h = self.addHost(
                     "h%d" % host_num, ip=host_ip, mac="00:00:00:00:00:%02x" % host_num 
                 )
                 self.addLink(h,s,port2=i)  
-            print("\n") 
 
         self.addLink(s2,s1) 
         self.addLink(s2,s3) 
