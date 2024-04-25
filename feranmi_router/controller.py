@@ -2,9 +2,8 @@ from threading import Thread, Event
 from scapy.all import sendp
 from scapy.all import Packet, Ether, IP, ARP
 from async_sniff import sniff
-from cpu_metadata import CPUMetadata
+from cpu_metadata import CPUMetadata, Pwospf as PWOSPF, LinkStateAdvertisement as LSU
 from ipaddress  import ip_network, ip_address, IPv4Address
-from pwospf import PWOSPF, LSU
 import time, threading
 import heapq
 
@@ -35,18 +34,18 @@ class Routes():
 
 
     def check_seq(self,pkt):
-        rid = pkt[PWOSPF].routerID
+        rid = pkt[PWOSPF].router_id
         if rid not in self.seq_num.keys():
-            self.seq_num[rid] = pkt[PWOSPF].seqNum
+            self.seq_num[rid] = pkt[PWOSPF].seq
             return False
-        if pkt[PWOSPF].seqNum <= self.seq_num[rid]:
+        if pkt[PWOSPF].seq <= self.seq_num[rid]:
             return True
-        self.seq_num[rid] = pkt[PWOSPF].seqNum
+        self.seq_num[rid] = pkt[PWOSPF].seq
         return False
 
     #TODO: if change is detected in LSU, send LSU flood?
     def update_lsu(self,pkt):
-        rid = pkt[PWOSPF].routerID
+        rid = pkt[PWOSPF].router_id
         rip = pkt[IP].src
         if self.check_seq(pkt):
             return
@@ -61,24 +60,24 @@ class Routes():
         if valid:
             lsu_ads = pkt[PWOSPF].advertisements
             lsu_ad = pkt[PWOSPF].advertisements[0]
-            lsu_num = pkt[PWOSPF].adverts
+            lsu_num = pkt[PWOSPF].num_ads
             print(f"{self.sw} --> PRIOR: {self.lsa}")
             for i in range(0,lsu_num):
-                lsu_rid = lsu_ad.routerID
+                lsu_rid = lsu_ad.router_id
                 if lsu_rid not in self.lsa:
                     #Also add to Adjacency graph of neighbor
-                    if lsu_rid not in self.adj[pkt[PWOSPF].routerID]:
-                        self.adj[pkt[PWOSPF].routerID].append(lsu_rid)
+                    if lsu_rid not in self.adj[pkt[PWOSPF].router_id]:
+                        self.adj[pkt[PWOSPF].router_id].append(lsu_rid)
                         if lsu_rid not in self.adj:
                             self.adj[lsu_rid] = []
-                        self.adj[lsu_rid].append(pkt[PWOSPF].routerID)
+                        self.adj[lsu_rid].append(pkt[PWOSPF].router_id)
                         print(f"{self.sw} --> EDGE {self.adj}")
                     self.lsa[lsu_rid] = []
                 subnet = lsu_ad.subnet
                 mask = lsu_ad.mask
                 if (subnet,mask) not in self.lsa[lsu_rid]:
                     print(f"{self.sw} --> ADDING {subnet}/{mask}/{lsu_rid}")
-                    self.lsa[lsu_ad.routerID].append((subnet,mask))
+                    self.lsa[lsu_ad.router_id].append((subnet,mask))
                     change = True
                 path = self.next_hop(subnet,mask)
                 #print(f"{self.sw} --> {path} to {subnet}/{mask}")
@@ -245,7 +244,7 @@ class OSPFInterface:
         ether = Ether(src=src_mac, dst="ff:ff:ff:ff:ff:ff")
         cpumetadata = CPUMetadata(origEtherType=0x0800, srcPort=1)
         ipv4 = IP(src=self.ip, dst=ALLSPFRouters)  #
-        ospf = PWOSPF(type=1, routerID=self.routerID, areaID=self.areaID, mask=self.mask, helloInt=self.helloInt)
+        ospf = PWOSPF(type=1, router_id=self.routerID, area_id=self.areaID, mask=self.mask, helloint=self.helloInt)
         return ether / cpumetadata / ipv4 / ospf
 
 class Controller(Thread):
@@ -387,14 +386,14 @@ class Controller(Thread):
             for v in self.routes.lsa[rid]:
                 lsu_ads.append((v,rid))
         print(f"{self.sw}: LSU_AD_SEND --> {lsu_ads}")
-        lsu_ads_pkt = [LSU(subnet = s, mask = m, routerID = r) for (s,m),r in lsu_ads]
+        lsu_ads_pkt = [LSU(subnet = s, mask = m, router_id = r) for (s,m),r in lsu_ads]
         for n in neighbor_routers:
             dst_ip = self.routes.id_to_ip[n]
             src_ip = self.getSrcIp(dst_ip)
             l2 = Ether(dst ="ff:ff:ff:ff:ff:ff")
             l2_cpumetadata = CPUMetadata(origEtherType=0x0800, srcPort = 1)
             l3 = IP(src = src_ip,dst = dst_ip,proto=89)
-            l3_pwospf_flood = PWOSPF(type=LSU_TYPE,routerID = self.routerID, areaID = self.areaID, seqNum = self.host_seq, ttl = TTL_DEFAULT,adverts = len(lsu_ads_pkt), advertisements = lsu_ads_pkt)
+            l3_pwospf_flood = PWOSPF(type=LSU_TYPE,router_id = self.routerID, area_id = self.areaID, seq = self.host_seq, ttl = TTL_DEFAULT,num_ads = len(lsu_ads_pkt), advertisements = lsu_ads_pkt)
             lsu_pkt = l2 / l2_cpumetadata / l3 / l3_pwospf_flood
             if not self.arp_cache.in_cache(dst_ip):
                 self.sendArpRequest(lsu_pkt,dst_ip)
@@ -417,7 +416,7 @@ class Controller(Thread):
 
     def handlePWOSPFHello(self, pkt):
         incoming_ip = pkt[IP].src
-        routerID = pkt[PWOSPF].routerID
+        routerID = pkt[PWOSPF].router_id
         for intfs in self.ospf_intfs:
             if ip_address(incoming_ip) in ip_network(intfs.subnet):
                 intfs.update_timer(routerID, incoming_ip)
