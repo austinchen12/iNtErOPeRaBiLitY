@@ -8,7 +8,7 @@ from scapy.all import sendp
 from scapy.all import Packet, Ether, IP, ARP, Padding, IPv6, ICMP
 from async_sniff import sniff
 from cpu_metadata import CPUMetadata
-from pwospf import Pwospf, LinkStateAdvertisement
+from oliver_router.pwospf import Pwospf, LinkStateAdvertisement
 import time, threading 
 from ipaddress import ip_network, ip_address, IPv4Address, IPv4Network 
 

@@ -2,21 +2,21 @@ from threading import Thread, Event, Timer
 from scapy.all import sendp
 from scapy.all import Packet, Ether, IP, ARP
 from async_sniff import sniff
-from austin_router.cpu_metadata import CPUMetadata, PWOSPF, HelloPayload, Advertisement, LSUPayload
+from cpu_metadata import CPUMetadata, OSPFHeader, OSPFHello, OSPFLSA, OSPFLSU
 import time
 from ipaddress import ip_address, ip_network
 from austin_router.ospf import OSPFInterface
 from datetime import datetime, timedelta
-from austin_router.utils import ARP_OP_REQ, ARP_OP_REPLY
-from austin_router.utils import TYPE_IPV4, TYPE_ARP, TYPE_CPU_METADATA, TYPE_OSPF
-from austin_router.utils import TYPE_OSPF_HELLO, TYPE_OSPF_LSU
-from austin_router.utils import HW_TYPE_ETHERNET, MASK_24, MASK_32, ALLSPFRouters, BIRTHDAY, create_subnet, add_mask_size, get_subnet_mask, apply_mask
+from utils import ARP_OP_REQ, ARP_OP_REPLY
+from utils import TYPE_IPV4, TYPE_ARP, TYPE_CPU_METADATA, TYPE_OSPF
+from utils import TYPE_OSPF_HELLO, TYPE_OSPF_LSU
+from utils import HW_TYPE_ETHERNET, MASK_24, MASK_32, ALLSPFRouters, BIRTHDAY, create_subnet, add_mask_size, get_subnet_mask, apply_mask
 import heapq
 from collections import defaultdict, deque
     
-class AustinController(Thread):
+class Controller(Thread):
     def __init__(self, sw, ips, macs, config, router_id, area_id, start_wait=0.3):
-        super(AustinController, self).__init__()
+        super(Controller, self).__init__()
         self.sw = sw
         self.start_wait = start_wait # time to wait for the controller to be listenning
         self.iface = sw.intfs[1].name
@@ -45,39 +45,16 @@ class AustinController(Thread):
         self.lsdb = { self.router_id: set((ip, get_subnet_mask(subnet)) for ip, mac, subnet, is_static in config.values()) }
         self.adj = defaultdict(set)
 
-        self.map_in = { 
-            "10.0.1.4": "10.0.4.1",
-            "10.0.1.5": "10.0.4.1",
-            "10.0.2.4": "10.0.4.2",
-            "10.0.2.5": "10.0.4.2",
-            "10.0.3.4": "10.0.4.3",
-            "10.0.3.5": "10.0.4.3",             
-        }
-        self.map_out = defaultdict(list)
-        for k, v in self.map_in.items():
-            self.map_out[v].append(k)
-
     def send_hello(self):
         for intf in self.ospf_interfaces.values():
-            if intf.ip in self.map_out:
-                for ip in self.map_out[intf.ip]:
-                    pkt = (Ether(src=self.mac, dst="ff:ff:ff:ff:ff:ff")
-                                / CPUMetadata(origEtherType=TYPE_IPV4)
-                                / IP(src=ip, dst=ALLSPFRouters, proto=TYPE_OSPF)
-                                / PWOSPF(type=TYPE_OSPF_HELLO, router_id=self.router_id, area_id=self.area_id)
-                                / HelloPayload(subnet_mask=intf.mask, hello_interval=self.helloint)
-                        )
-                    print('@@HELLO send1', self.sw.name, ip)
-                    self.send(pkt)
-            else:
-                print('@@HELLO send2', self.sw.name, intf.ip)
-                pkt = (Ether(src=self.mac, dst="ff:ff:ff:ff:ff:ff")
-                                / CPUMetadata(origEtherType=TYPE_IPV4)
-                                / IP(src=intf.ip, dst=ALLSPFRouters, proto=TYPE_OSPF)
-                                / PWOSPF(type=TYPE_OSPF_HELLO, router_id=self.router_id, area_id=self.area_id)
-                                / HelloPayload(subnet_mask=intf.mask, hello_interval=self.helloint)
-                        )
-                self.send(pkt)
+            pkt = (Ether(src=self.mac, dst="ff:ff:ff:ff:ff:ff")
+                            / CPUMetadata(origEtherType=TYPE_IPV4)
+                            / IP(src=intf.ip, dst=ALLSPFRouters, proto=TYPE_OSPF)
+                            / OSPFHeader(type=TYPE_OSPF_HELLO, router_id=self.router_id, area_id=self.area_id)
+                            / OSPFHello(network_mask=intf.mask, helloint=self.helloint)
+                    )
+            self.send(pkt)
+            print('@@HELLO', self.sw.name, intf.ip)
 
         # to_be_deleted = []
         # for key, last_ping in self.neighbors.items():
@@ -118,7 +95,6 @@ class AustinController(Thread):
             #     del self.lsdb[router_id]
             # if len(to_be_deleted) > 0:
             #     self._floodLSU()
-        # print('@@end', self.sw.name, self.routing_table, self.ip_to_mac, self.mac_to_port)
     
     def _floodLSU(self):
         lsa_tuples = set()
@@ -128,11 +104,10 @@ class AustinController(Thread):
         
         lsa_list = []
         for subnet, mask, router_id in lsa_tuples:
-            lsa_list.append(Advertisement(subnet=subnet, mask=mask, router_id=router_id))
+            lsa_list.append(OSPFLSA(subnet=subnet, mask=mask, router_id=router_id))
         lsa_list.reverse()
         self.sequence += 1
-
-        print('@@FLOOD', self.sw.name, lsa_list, self.adj[self.router_id])
+        # print('@@FLOOD', self.sw.name, self.adj[self.router_id])
 
         for router_id in self.adj[self.router_id]:
             src_ip, dst_ip = None, None
@@ -148,8 +123,8 @@ class AustinController(Thread):
             pkt = (Ether(dst="ff:ff:ff:ff:ff:ff")
                     / CPUMetadata(origEtherType=TYPE_IPV4)
                     / IP(src=src_ip, dst=dst_ip, proto=TYPE_OSPF)
-                    / PWOSPF(type=TYPE_OSPF_LSU, router_id=self.router_id, area_id=self.area_id) 
-                    / LSUPayload(sequence=self.sequence, num_advertisements=len(lsa_list), advertisements=lsa_list)
+                    / OSPFHeader(type=TYPE_OSPF_LSU, router_id=self.router_id, area_id=self.area_id) 
+                    / OSPFLSU(sequence=self.sequence, lsa_count=len(lsa_list), lsa_list=lsa_list)
             )
             if dst_ip in self.ip_to_mac:
                 self.send(pkt)
@@ -157,8 +132,8 @@ class AustinController(Thread):
                 # make ARP request
                 print('@@wtf2', self.sw.name, dst_ip, router_id, self.adj[self.router_id])
                 self.sendArpRequest(pkt, dst_ip)
-            else:
-                print('@@wtf1', self.sw.name, router_id)
+            # else:
+                # print('@@wtf1', self.sw.name, router_id)
 
     def addMacAddr(self, mac, port):
         # Don't re-add the mac-port mapping if we already have it:
@@ -206,17 +181,20 @@ class AustinController(Thread):
             # ArpRequest we sent out
             return
 
-        # print('@@arpRequest', self.sw.name, (pkt[Ether].src, pkt[Ether].dst), (pkt[ARP].psrc, pkt[ARP].pdst), self.subnet_mapping.keys())
         # TODO: need protection
         self.addMacAddr(pkt[ARP].hwsrc, pkt[CPUMetadata].srcPort)
         self.addIPAddr(pkt[ARP].psrc, pkt[ARP].hwsrc)
 
         dst_ip = pkt[ARP].pdst
-        # only forward ARP packet if the target is in one of the subnets
-        for s in self.subnet_mapping:
-            if ip_address(pkt[ARP].pdst) in ip_network(s):
-                self.send(pkt)
-                break
+        if dst_ip in self.ips:
+            # dst_ip belongs to this controller, so we want to reply
+            self.sendArpReply(pkt)
+        else:
+            # only forward ARP packet if the target is in one of the subnets
+            for s in self.subnet_mapping:
+                if ip_address(pkt[ARP].pdst) in ip_network(s):
+                    self.send(pkt)
+                    break
     
     def sendArpReply(self, pkt):
         subnet = None
@@ -252,7 +230,7 @@ class AustinController(Thread):
             self.send(pkt)
         else:
             # make ARP request
-            # print('@@wtf3', self.sw.name, pkt[IP].src, pkt[IP].dst, next_hop, self.ip_to_mac)
+            print('@@wtf3', self.sw.name, pkt[IP].src, pkt[IP].dst, next_hop, self.ip_to_mac)
             self.sendArpRequest(pkt, next_hop)
 
     def sendArpRequest(self, pkt, target_ip):
@@ -274,25 +252,24 @@ class AustinController(Thread):
 
     def handleOSPFHello(self, pkt):
         src_ip = pkt[IP].src
-        if pkt[PWOSPF].area_id != self.area_id:
+        if pkt[OSPFHeader].area_id != self.area_id:
             return
 
-        src_ip = self.map_in[src_ip] if src_ip in self.map_in else src_ip
-
-        print('@handle_HELLO', self.sw.name, pkt[IP].src, src_ip)
+        print('@@handle_hello', self.sw.name, src_ip)
         for intf in self.ospf_interfaces.values():
             if ip_address(src_ip) in ip_network(intf.subnet):
                 # TODO: intf == self.ospf_interfaces[pkt[CPUMetadata].srcPort]
-                mask = pkt[HelloPayload].subnet_mask
-                helloint = pkt[HelloPayload].hello_interval
+                mask = pkt[OSPFHello].network_mask
+                helloint = pkt[OSPFHello].helloint
                 if mask != intf.mask or helloint != intf.helloint:
                     return
 
+                # print('@handle_HELLO', self.sw.name, src_ip, pkt[Ether].src, pkt[CPUMetadata].srcPort)
                 self.addMacAddr(pkt[Ether].src, pkt[CPUMetadata].srcPort)
                 self.addIPAddr(pkt[IP].src, pkt[Ether].src)
 
 
-                router_id = pkt[PWOSPF].router_id
+                router_id = pkt[OSPFHeader].router_id
                 if (router_id, src_ip) not in intf.neighbors:
                     self.lsdb[router_id] = set([(src_ip, intf.mask)])
                     
@@ -318,22 +295,22 @@ class AustinController(Thread):
         assert False # should never receive a hello packet from a non-neighbor
 
     def handleOSPFLSU(self, pkt):
-        router_id = pkt[PWOSPF].router_id
+        router_id = pkt[OSPFHeader].router_id
         if router_id == self.router_id:
             return
         
         lsa_list = []
-        lsa = pkt[LSUPayload].advertisements[0]
+        lsa = pkt[OSPFLSU].lsa_list[0]
         for intf in self.ospf_interfaces.values():
             if ip_address(pkt[IP].src) in ip_network(intf.subnet):
                 break
         else:
             # unknown subnet
-            # print('@@UNKNOWN SUBNET', self.sw.name, pkt[IP].src)
+            print('@@UNKNOWN SUBNET', self.sw.name, pkt[IP].src)
             return
 
-        print('@@HANDLE_LSU', self.sw.name, pkt[IP].src, self.lsdb)
-        for i in range(pkt[LSUPayload].num_advertisements):
+        # print('@@HANDLE_LSU', self.sw.name, pkt[IP].src, self.lsdb)
+        for i in range(pkt[OSPFLSU].lsa_count):
             rid = lsa.router_id
             lsa_list.append(lsa)
             lsa = lsa.payload
@@ -345,7 +322,7 @@ class AustinController(Thread):
                 continue
 
             if rid not in self.lsdb:
-                # print('@@ROUTER_ID MISMATCH A', self.sw.name, rid, self.lsdb, self.adj, [intf.neighbors for intf in self.ospf_interfaces.values()])
+                print('@@ROUTER_ID MISMATCH A', self.sw.name, rid, self.lsdb, self.adj, [intf.neighbors for intf in self.ospf_interfaces.values()])
                 # self.adj[router_id].add(rid)
                 # self.adj[rid].add(router_id)
                 self.lsdb[rid] = set()
@@ -394,12 +371,13 @@ class AustinController(Thread):
                     priority = 1 if mask == MASK_24 else 2,
                 )
                 # if flood_update: self._floodLSU()
-            # else:
-                # print('@@preadj', self.sw.name, rid, next_hops, self.adj, adj)
-                # print('@@waitwtf', self.sw.name, next_id, next_ip, (lsa.subnet, lsa.mask, lsa.router_id), [intf.neighbors for intf in self.ospf_interfaces.values()])
+            else:
+                print('@@preadj', self.sw.name, rid, next_hops, self.adj, adj)
+                print('@@waitwtf', self.sw.name, next_id, next_ip, (lsa.subnet, lsa.mask, lsa.router_id), [intf.neighbors for intf in self.ospf_interfaces.values()])
         # print('@@LSU_HANDLE_END', self.sw.name, self.routing_table)
         # self.send(pkt)
         
+    
     def get_next_hops(self, src):
         next_hop = defaultdict(lambda: None)
         def bfs(dst):
@@ -426,6 +404,60 @@ class AustinController(Thread):
             if node == src: continue
             next_hop[node] = bfs(node)
         return next_hop
+    
+    # def recomputeRoutingTable(self):
+    #     adj = defaultdict(list)
+    #     networks = {}
+    #     for intf in self.ospf_interfaces.values(): # TODO: 
+    #         router_id = intf.router_id
+    #         for neigh_id, neigh_ip in intf.neighbors:
+    #             if router_id not in adj: adj[router_id] = set()
+    #             if neigh_id not in adj: adj[neigh_id] = set()
+    #             adj[router_id].add(neigh_id)
+    #             adj[neigh_id].add(router_id)
+    #             netaddr = add_mask_size(neigh_ip, intf.mask) # TODO: is intf.mask correct?
+    #             if netaddr not in networks:
+    #                 networks[netaddr] = set()
+    #             networks[netaddr].add(router_id)
+
+    #     next_hops = self.get_next_hops(adj, self.router_id)
+    #     ospf_table = dict()
+
+    #     for netaddr, nodes in networks.items():
+    #         next_r_id = None
+    #         for r_id in nodes:
+    #             if r_id != self.router_id and r_id in next_hops:
+    #                 next_r_id = next_hops[r_id]
+    #                 break
+            
+    #         for port, intf in self.ospf_interfaces.items():
+    #             next_ip = None
+    #             for n_id, n_ip in intf.neighbors:
+    #                 if n_id == next_r_id:
+    #                     next_ip = n_ip
+    #             if create_subnet(intf.ip, intf.mask) == netaddr:
+    #                 next_ip = '0.0.0.0'
+    #             if next_ip is not None:
+    #                 ospf_table[netaddr] = (next_ip, port)
+        
+    #     for netaddr, r in ospf_table.items():
+    #         ip, prefixlen = netaddr.split('/')
+    #         subnet_with_mask = str
+    #         if r != self.routing_table.get(netaddr):
+    #             if netaddr in self.routing_table:
+    #                 self.sw.removeTableEntry(table_name='MyIngress.fwd_l3',
+    #                                     match_fields={'hdr.ipv4.dstAddr': [ip, get_subnet_mask(netaddr)]})
+    #             self.sw.insertTableEntry(table_name='MyIngress.fwd_l3',
+    #                                 match_fields={'hdr.ipv4.dstAddr': [ip, get_subnet_mask(netaddr)]},
+    #                                 action_name='MyIngress.set_dst_ip',
+    #                                 action_params={'dst_ip': r[0]},
+    #                                 priority=1)
+    #             self.routing_table[netaddr] = r
+        
+    #     # to_be_deleted = [netaddr for netaddr in self.routing_table
+    #     #                   if netaddr not in ospf_table]
+    #     # for netaddr in to_be_deleted:
+    #     #     del self.routing_table[netaddr]
 
     def handlePkt(self, pkt):
         # Ignore packets that the CPU sends:
@@ -437,10 +469,10 @@ class AustinController(Thread):
             elif pkt[ARP].op == ARP_OP_REPLY:
                 self.handleArpReply(pkt)
 
-        if PWOSPF in pkt:
-            if pkt[PWOSPF].type == TYPE_OSPF_HELLO:
+        if OSPFHeader in pkt:
+            if pkt[OSPFHeader].type == TYPE_OSPF_HELLO:
                 self.handleOSPFHello(pkt)
-            elif pkt[PWOSPF].type == TYPE_OSPF_LSU:
+            elif pkt[OSPFHeader].type == TYPE_OSPF_LSU:
                 self.handleOSPFLSU(pkt)
             else:
                 assert False
@@ -461,9 +493,9 @@ class AustinController(Thread):
         sniff(iface=self.iface, prn=self.handlePkt, stop_event=self.stop_event)
 
     def start(self, *args, **kwargs):
-        super(AustinController, self).start(*args, **kwargs)
+        super(Controller, self).start(*args, **kwargs)
         time.sleep(self.start_wait)
 
     def join(self, *args, **kwargs):
         self.stop_event.set()
-        super(AustinController, self).join(*args, **kwargs)
+        super(Controller, self).join(*args, **kwargs)

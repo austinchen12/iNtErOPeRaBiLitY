@@ -1,7 +1,8 @@
-from scapy.fields import BitField, ByteField, ShortField
+from scapy.fields import IntField, ShortField, ByteField, ByteEnumField, LongField, XIntField, PacketListField, IPField, LenField
 from scapy.packet import Packet, bind_layers
 from scapy.layers.inet import IP
 from scapy.layers.l2 import Ether, ARP
+from utils import TYPE_OSPF, ALLSPFRouters, BIRTHDAY, TYPE_IPV4, TYPE_OSPF_HELLO, MASK_32, get_subnet_mask
 
 TYPE_CPU_METADATA = 0x080a
 

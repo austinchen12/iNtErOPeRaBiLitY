@@ -3,7 +3,7 @@
 # from scapy.layers.inet import IP
 # from scapy.all import Ether
 from datetime import datetime, timedelta
-from austin_router.utils import TYPE_OSPF, ALLSPFRouters, BIRTHDAY, TYPE_IPV4, TYPE_OSPF_HELLO, MASK_32, get_subnet_mask
+from utils import TYPE_OSPF, ALLSPFRouters, BIRTHDAY, TYPE_IPV4, TYPE_OSPF_HELLO, MASK_32, get_subnet_mask
 from threading import Thread, Lock, Timer
 
 class OSPFInterface():
