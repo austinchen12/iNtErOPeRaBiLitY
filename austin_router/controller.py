@@ -54,7 +54,7 @@ class Controller(Thread):
                             / OSPFHello(network_mask=intf.mask, helloint=self.helloint)
                     )
             self.send(pkt)
-            print('@@HELLO', self.sw.name, intf.ip)
+            # print('@@HELLO', self.sw.name, intf.ip)
 
         # to_be_deleted = []
         # for key, last_ping in self.neighbors.items():
@@ -74,17 +74,14 @@ class Controller(Thread):
         Timer(self.helloint, self.send_hello).start()
 
     def ospfLSALoop(self):
-        return
         prev_time = BIRTHDAY
         count = 0
         while count < 2:
             time.sleep(self.lsuint)
             # if datetime.now() >= prev_time + timedelta(seconds=self.lsuint):
-            # print('@@LOOP', self.sw.name, self.lsdb)
             self._floodLSU()
             # prev_time = datetime.now()
             count += 1
-            # print('@@END', self.sw.name, self.adj, self.lsdb, self.ip_to_mac, self.mac_to_port, self.routing_table, [(*k, intf.neighbors) for k, intf in self.ospf_interfaces.items()])
             
             # to_be_deleted = []
             # for router_id, lsa in self.lsdb.items(): # TODO: changed here??
@@ -130,10 +127,7 @@ class Controller(Thread):
                 self.send(pkt)
             elif dst_ip:
                 # make ARP request
-                print('@@wtf2', self.sw.name, dst_ip, router_id, self.adj[self.router_id])
                 self.sendArpRequest(pkt, dst_ip)
-            # else:
-                # print('@@wtf1', self.sw.name, router_id)
 
     def addMacAddr(self, mac, port):
         # Don't re-add the mac-port mapping if we already have it:
@@ -230,7 +224,6 @@ class Controller(Thread):
             self.send(pkt)
         else:
             # make ARP request
-            print('@@wtf3', self.sw.name, pkt[IP].src, pkt[IP].dst, next_hop, self.ip_to_mac)
             self.sendArpRequest(pkt, next_hop)
 
     def sendArpRequest(self, pkt, target_ip):
@@ -238,7 +231,6 @@ class Controller(Thread):
         # cpu_metadata.origEthertype = TYPE_ARP
         src_ip = src_mac = None # TODO: refactor this to handleIPRequest
         for s in self.subnet_mapping: # what happens if this fails
-            # print('@@WTF', self.sw.name, target_ip, s)
             if ip_address(target_ip) in ip_network(s):
                 src_ip, src_mac = self.subnet_mapping[s][0], self.subnet_mapping[s][1]
 
@@ -255,7 +247,7 @@ class Controller(Thread):
         if pkt[OSPFHeader].area_id != self.area_id:
             return
 
-        print('@@handle_hello', self.sw.name, src_ip)
+        # print('@@handle_hello', self.sw.name, src_ip)
         for intf in self.ospf_interfaces.values():
             if ip_address(src_ip) in ip_network(intf.subnet):
                 # TODO: intf == self.ospf_interfaces[pkt[CPUMetadata].srcPort]

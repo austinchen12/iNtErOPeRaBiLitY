@@ -30,7 +30,6 @@ header cpu_metadata_t {
     bit<8> fromCpu;
     bit<16> origEtherType;
     bit<16> srcPort;
-    bit<16> dstPort;
 }
 
 header arp_t {
@@ -70,7 +69,6 @@ header ospf_t {
     bit<16> checksum;
     bit<16> autype;
     bit<64> authentication;
-    bit<64> authentication2;
 }
 
 header ospf_hello_t {
@@ -279,9 +277,6 @@ control MyIngress(inout headers hdr,
             else if (hdr.ipv4.isValid()) {
                 log_msg("@@IPV4 {}, {}", {hdr.ipv4.srcAddr, hdr.ipv4.dstAddr});
             }
-        }
-        if (hdr.ospf_hello.isValid()) {
-            log_msg("@@HELLO {}, {}, {}", { hdr.ipv4.srcAddr, hdr.ipv4.dstAddr, standard_metadata.ingress_port });
         }
 
         if (hdr.arp.isValid() && standard_metadata.ingress_port != CPU_PORT) {

@@ -14,7 +14,7 @@ import random
 
 
 N = 3
-interop_progs = ['oliver_router/l2switch.p4', 'oliver_router/l2switch.p4'] # TODO: change with your p4 script
+interop_progs = ['oliver_router/l2switch.p4', 'austin_router/router.p4'] # TODO: change with your p4 script
 topo = TriangleSwitchTopo(N, interop_progs)
 net = P4Mininet(program='oliver_router/l2switch.p4', topo=topo, auto_arp=False)
 net.start()
@@ -82,15 +82,41 @@ def initialize_topology():
             cpu = configure_oli(sw,host_ips[si],si+1) 
         elif si == 1: 
             cpu = configure_oli(sw,host_ips[si],si+1) 
-        else: 
-            cpu = configure_oli(sw,host_ips[si],si+1)
+        else:
+            for ip, mac, port in topo.tuples[sw.name]:
+                sw.insertTableEntry(
+                    table_name="MyIngress.fwd_l3",
+                    match_fields={"hdr.ipv4.dstAddr": [ip, 0xFFFFFFFF]},
+                    action_name="MyIngress.set_dst_ip",
+                    action_params={"dst_ip": ip},
+                    priority = 2,
+                )
+                sw.insertTableEntry(
+                    table_name="MyIngress.arp_table",
+                    match_fields={"next_hop": [ip, 0xFFFFFFFF]},
+                    action_name="MyIngress.set_dst_mac",
+                    action_params={"mac_addr": mac},
+                    priority = 1,
+                )
+                sw.insertTableEntry(
+                    table_name="MyIngress.fwd_l2",
+                    match_fields={"hdr.ethernet.dstAddr": mac},
+                    action_name="MyIngress.set_egr",
+                    action_params={"port": port},
+                )
+
+            r1_ips, r1_macs, r1_subnets = [f"10.0.{si}.4", f"10.0.3.{si}"], [f"00:00:00:00:0{si}:04", f"00:00:00:00:03:0{si}"], [f"10.0.{si}.0/24", "10.0.3.0/24"]
+            r1_config = {
+                (2, 4): (r1_ips[0], r1_macs[0], r1_subnets[0], True),
+                (4, 6): (r1_ips[1], r1_macs[1], r1_subnets[1], False)
+            }
+                        
+            cpu = AustinController(sw, r1_ips, r1_macs, r1_config, si, 1) # router_id si, area_id 1
+
         cpu.start()
 
 
 initialize_topology()
 
-
-
-
-time.sleep(7)
+time.sleep(5)
 CLI(net)

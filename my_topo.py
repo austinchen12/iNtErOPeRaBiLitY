@@ -31,8 +31,6 @@ class TriangleSwitchTopo(Topo):
                 hi = 3 * si + i
                 ip = "10.0.%d.%d/24" % (si, i)
                 mac = "00:00:00:00:%02x:%02x" % (si, i)
-                #print('@@setup', "h%d" % hi)
-                print(f"h{hi}: {ip}, {mac}") 
                 h = self.addHost(
                     "h%d" % hi, ip=ip, mac=mac
                 )
