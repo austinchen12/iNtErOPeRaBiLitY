@@ -2,7 +2,7 @@ from threading import Thread, Event, Timer
 from scapy.all import sendp
 from scapy.all import Packet, Ether, IP, ARP
 from async_sniff import sniff
-from cpu_metadata import CPUMetadata, OSPFHeader, OSPFHello, OSPFLSA, OSPFLSU
+from cpu_metadata import CPUMetadata, Pwospf, LinkStateAdvertisement
 import time
 from ipaddress import ip_address, ip_network
 from austin_router.ospf import OSPFInterface
@@ -50,8 +50,7 @@ class Controller(Thread):
             pkt = (Ether(src=self.mac, dst="ff:ff:ff:ff:ff:ff")
                             / CPUMetadata(origEtherType=TYPE_IPV4)
                             / IP(src=intf.ip, dst=ALLSPFRouters, proto=TYPE_OSPF)
-                            / OSPFHeader(type=TYPE_OSPF_HELLO, router_id=self.router_id, area_id=self.area_id)
-                            / OSPFHello(network_mask=intf.mask, helloint=self.helloint)
+                            / Pwospf(type = TYPE_OSPF_HELLO, router_id = self.router_id, area_id = self.area_id, mask = intf.mask, helloint = self.helloint) 
                     )
             self.send(pkt)
             # print('@@HELLO', self.sw.name, intf.ip)
@@ -101,7 +100,7 @@ class Controller(Thread):
         
         lsa_list = []
         for subnet, mask, router_id in lsa_tuples:
-            lsa_list.append(OSPFLSA(subnet=subnet, mask=mask, router_id=router_id))
+            lsa_list.append(LinkStateAdvertisement(subnet=subnet, mask=mask, router_id=router_id))
         lsa_list.reverse()
         self.sequence += 1
         # print('@@FLOOD', self.sw.name, self.adj[self.router_id])
@@ -120,8 +119,7 @@ class Controller(Thread):
             pkt = (Ether(dst="ff:ff:ff:ff:ff:ff")
                     / CPUMetadata(origEtherType=TYPE_IPV4)
                     / IP(src=src_ip, dst=dst_ip, proto=TYPE_OSPF)
-                    / OSPFHeader(type=TYPE_OSPF_LSU, router_id=self.router_id, area_id=self.area_id) 
-                    / OSPFLSU(sequence=self.sequence, lsa_count=len(lsa_list), lsa_list=lsa_list)
+                    / Pwospf(type=TYPE_OSPF_LSU,router_id = self.router_id, area_id = self.area_id, seq = self.sequence, ttl = TTL_DEFAULT,num_ads = len(lsa_list), advertisements = lsa_list)
             )
             if dst_ip in self.ip_to_mac:
                 self.send(pkt)
@@ -244,15 +242,15 @@ class Controller(Thread):
 
     def handleOSPFHello(self, pkt):
         src_ip = pkt[IP].src
-        if pkt[OSPFHeader].area_id != self.area_id:
+        if pkt[Pwospf].area_id != self.area_id:
             return
 
         # print('@@handle_hello', self.sw.name, src_ip)
         for intf in self.ospf_interfaces.values():
             if ip_address(src_ip) in ip_network(intf.subnet):
                 # TODO: intf == self.ospf_interfaces[pkt[CPUMetadata].srcPort]
-                mask = pkt[OSPFHello].network_mask
-                helloint = pkt[OSPFHello].helloint
+                mask = pkt[Pwospf].mask
+                helloint = pkt[Pwospf].helloint
                 if mask != intf.mask or helloint != intf.helloint:
                     return
 
@@ -261,7 +259,7 @@ class Controller(Thread):
                 self.addIPAddr(pkt[IP].src, pkt[Ether].src)
 
 
-                router_id = pkt[OSPFHeader].router_id
+                router_id = pkt[Pwospf].router_id
                 if (router_id, src_ip) not in intf.neighbors:
                     self.lsdb[router_id] = set([(src_ip, intf.mask)])
                     
@@ -287,12 +285,12 @@ class Controller(Thread):
         assert False # should never receive a hello packet from a non-neighbor
 
     def handleOSPFLSU(self, pkt):
-        router_id = pkt[OSPFHeader].router_id
+        router_id = pkt[Pwospf].router_id
         if router_id == self.router_id:
             return
         
         lsa_list = []
-        lsa = pkt[OSPFLSU].lsa_list[0]
+        lsa = pkt[Pwospf].advertisements[0]
         for intf in self.ospf_interfaces.values():
             if ip_address(pkt[IP].src) in ip_network(intf.subnet):
                 break
@@ -302,7 +300,7 @@ class Controller(Thread):
             return
 
         # print('@@HANDLE_LSU', self.sw.name, pkt[IP].src, self.lsdb)
-        for i in range(pkt[OSPFLSU].lsa_count):
+        for i in range(pkt[Pwospf].num_ads):
             rid = lsa.router_id
             lsa_list.append(lsa)
             lsa = lsa.payload
@@ -461,10 +459,10 @@ class Controller(Thread):
             elif pkt[ARP].op == ARP_OP_REPLY:
                 self.handleArpReply(pkt)
 
-        if OSPFHeader in pkt:
-            if pkt[OSPFHeader].type == TYPE_OSPF_HELLO:
+        if Pwospf in pkt:
+            if pkt[Pwospf].type == TYPE_OSPF_HELLO:
                 self.handleOSPFHello(pkt)
-            elif pkt[OSPFHeader].type == TYPE_OSPF_LSU:
+            elif pkt[Pwospf].type == TYPE_OSPF_LSU:
                 self.handleOSPFLSU(pkt)
             else:
                 assert False

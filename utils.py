@@ -7,7 +7,7 @@ ARP_OP_REPLY = 0x0002
 TYPE_IPV4           = 0x800
 TYPE_ARP            = 0x806
 TYPE_CPU_METADATA   = 0x80a
-TYPE_OSPF           = 123
+TYPE_OSPF           = 89
 
 HW_TYPE_ETHERNET    = 0x1
 

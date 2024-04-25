@@ -15,7 +15,7 @@ const bit<16> ARP_OP_REPLY      = 0x0002;
 const bit<16> TYPE_IPV4         = 0x0800;
 const bit<16> TYPE_ARP          = 0x0806;
 const bit<16> TYPE_CPU_METADATA = 0x080a;
-const bit<8> TYPE_OSPF          = 123;
+const bit<8> TYPE_OSPF          = 89;
 const bit<8> TYPE_OSPF_HELLO    = 0x1;
 const bit<8> TYPE_OSPF_LSU      = 0x4;
 
